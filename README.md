@@ -2,13 +2,12 @@ ai-cw2
 
 download data from blackboard put in folder called data and run code
 
-feature extraction + preprocessing done
-logistic regression done C, class_weight
-decision tree done max_depth, min_sample_leaf
-manual knn classifer done k, weighting
-next steps
+**feature extraction + preprocessing done**:
+**logistic regression done**: C, class_weight
+**decision tree done**: max_depth, min_sample_leaf
+**manual knn classifer done**:k, weighting
 
-
+_next steps_
 unsupervised clustering
 finish doc
 

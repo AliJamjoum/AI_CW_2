@@ -1,0 +1,30 @@
+Excluded samples for label C
+Cutoff method: Median + MAD
+MAD_K: 3.5
+Median distance: 1.062909
+MAD: 0.331561
+Cutoff: 2.223372
+Total rows (after NaN drop): 302
+Kept: 285
+Excluded: 17
+Mirror-aligned total: 54
+Mirror-aligned kept: 49
+Mirror-aligned excluded: 5
+
+C/C_sample_461.jpg
+C/C_sample_114.jpg
+C/C_sample_262.jpg
+C/C_sample_95.jpg
+C/C_sample_248.jpg
+C/C_sample_204.jpg
+C/C_sample_375.jpg
+C/C_sample_361.jpg
+C/C_sample_202.jpg
+C/C_sample_36.jpg
+C/C_sample_187.jpg
+C/C_sample_556.jpg
+C/C_sample_127.jpg
+C/C_sample_287.jpg
+C/C_sample_442.jpg
+C/C_sample_130.jpg
+C/C_sample_508.jpg

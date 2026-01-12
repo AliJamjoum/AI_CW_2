@@ -1,0 +1,8 @@
+Mirror-aligned samples for label C (EXCLUDED)
+Count: 5 / 17
+
+C/C_sample_95.jpg
+C/C_sample_361.jpg
+C/C_sample_187.jpg
+C/C_sample_127.jpg
+C/C_sample_287.jpg

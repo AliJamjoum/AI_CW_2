@@ -1,0 +1,22 @@
+Total images scanned: 3781
+Hands detected: 3661
+Detection failures: 120
+
+Counts by label and handedness:
+handedness  Left  Right
+label                  
+A            344      6
+B            404      5
+C            293      9
+D            352     11
+E            354      7
+F            406      8
+G            353      7
+H            379      6
+I            350      8
+J            349     10
+
+Overall handedness counts:
+handedness
+Left     3584
+Right      77

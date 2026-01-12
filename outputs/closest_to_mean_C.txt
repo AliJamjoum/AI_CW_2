@@ -1,0 +1,20 @@
+Label: C
+Closest-to-mean identifier: C/C_sample_441.jpg
+Distance to mean: 0.330747
+Was mirror-aligned: False
+
+Cutoff summary (Median + MAD):
+MAD_K: 3.5
+Median distance: 1.062909
+MAD: 0.331561
+Cutoff: 2.223372
+
+Counts summary:
+Total rows (after NaN drop): 302
+Kept: 285
+Excluded: 17
+Mirror-aligned total: 54
+Mirror-aligned kept: 49
+Mirror-aligned excluded: 5
+
+Copied closest image to: ../outputs/closest_to_mean_C_image.jpg

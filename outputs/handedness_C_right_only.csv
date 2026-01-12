@@ -1,0 +1,10 @@
+label,file,path,detected,handedness,score,notes
+C,C_sample_123.jpg,../data/C/C_sample_123.jpg,True,Right,0.97591233253479,
+C,C_sample_239.jpg,../data/C/C_sample_239.jpg,True,Right,0.6707386374473572,
+C,C_sample_269.jpg,../data/C/C_sample_269.jpg,True,Right,0.9704797267913818,
+C,C_sample_36.jpg,../data/C/C_sample_36.jpg,True,Right,0.6456527709960938,
+C,C_sample_361.jpg,../data/C/C_sample_361.jpg,True,Right,0.9644314050674438,
+C,C_sample_41.jpg,../data/C/C_sample_41.jpg,True,Right,0.9300906658172607,
+C,C_sample_436.jpg,../data/C/C_sample_436.jpg,True,Right,0.9216117858886719,
+C,C_sample_461.jpg,../data/C/C_sample_461.jpg,True,Right,0.8486379384994507,
+C,C_sample_95.jpg,../data/C/C_sample_95.jpg,True,Right,0.9772912263870239,

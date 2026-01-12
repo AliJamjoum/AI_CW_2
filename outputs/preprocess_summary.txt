@@ -15,16 +15,40 @@ Removed invalid-label rows: 0
 Dropped rows with missing features: 0
 Dropped duplicate instance_id rows: 0
 Dropped rows with x/y out of range: 13
-Final shape: (3648, 65)
+Mirror-aligned samples (chosen mirrored orientation): 167 / 3648
+Dropped intra-class outliers (Median + MAD, MAD_K=3.5): 336
+Outliers removed per class:
+A    26
+B    49
+C    17
+D    31
+E    30
+F    27
+G    47
+H    36
+I    24
+J    49
+Cutoff per class (distance threshold):
+A    1.130456
+B    0.702549
+C    2.223372
+D    1.092318
+E    1.354647
+F    0.998030
+G    1.074164
+H    1.044609
+I    1.147731
+J    1.774110
+Final shape: (3312, 67)
 Class counts (after):
 label
-A    350
-B    405
-C    302
-D    363
-E    361
-F    412
-G    360
-H    382
-I    355
-J    358
+A    324
+B    356
+C    285
+D    332
+E    331
+F    385
+G    313
+H    346
+I    331
+J    309

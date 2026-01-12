@@ -1,0 +1,22 @@
+Label scanned: C
+Folder: ../data/C
+Total images scanned: 322
+Hands detected: 302
+Detection failures: 20
+
+Overall handedness counts (C only):
+handedness
+Left     293
+Right      9
+
+Right-hand detected count (C only): 9
+Right-hand detected files (C only):
+ - C_sample_123.jpg
+ - C_sample_239.jpg
+ - C_sample_269.jpg
+ - C_sample_36.jpg
+ - C_sample_361.jpg
+ - C_sample_41.jpg
+ - C_sample_436.jpg
+ - C_sample_461.jpg
+ - C_sample_95.jpg

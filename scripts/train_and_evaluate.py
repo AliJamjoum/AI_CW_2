@@ -97,8 +97,63 @@ def save_results_summary_csv(rows, out_path):
     pd.DataFrame(rows).to_csv(out_path, index=False)
 
 
-def safe_slug(name):
+def model_to_filename_prefix(name: str) -> str:
+    """
+    Turn a model name into a simple filename prefix.
+    No extra helper needed elsewhere; keep it local and obvious.
+    """
     return name.lower().replace(" ", "_")
+
+
+def save_false_negative_analysis(cm, labels, model_name, results_dir, top_k=3):
+    """
+    False negatives for class i = all true i that were predicted as NOT i.
+    From confusion matrix:
+      FN_i = row_sum_i - TP_i
+      Recall_i = TP_i / (TP_i + FN_i) = TP_i / row_sum_i  (if row_sum_i > 0)
+
+    Saves a CSV for your report/poster and prints worst classes.
+    """
+    cm = np.asarray(cm)
+    row_sums = cm.sum(axis=1)
+    tp = np.diag(cm)
+    fn = row_sums - tp
+
+    recall = np.zeros(len(labels), dtype=float)
+    for i in range(len(labels)):
+        if row_sums[i] > 0:
+            recall[i] = tp[i] / row_sums[i]
+        else:
+            recall[i] = 0.0
+
+    # Build per-class table
+    df_fn = pd.DataFrame({
+        "label": labels,
+        "true_count": row_sums.astype(int),
+        "true_positives": tp.astype(int),
+        "false_negatives": fn.astype(int),
+        "recall": recall
+    })
+
+    # Save CSV
+    prefix = model_to_filename_prefix(model_name)
+    out_csv = os.path.join(results_dir, f"{prefix}_false_negatives_per_class.csv")
+    df_fn.to_csv(out_csv, index=False)
+
+    # Print top-k worst FN and lowest recall (usually similar, but not always)
+    worst_by_fn = df_fn.sort_values(["false_negatives", "true_count"], ascending=[False, False]).head(top_k)
+    worst_by_recall = df_fn.sort_values(["recall", "true_count"], ascending=[True, False]).head(top_k)
+
+    print(f"\n{model_name} false negative analysis (per class):")
+    print(f"Saved per-class FN/recall table to: {out_csv}")
+
+    print(f"\nWorst classes by false negatives (top {top_k}):")
+    print(worst_by_fn.to_string(index=False))
+
+    print(f"\nWorst classes by recall (top {top_k}):")
+    print(worst_by_recall.to_string(index=False))
+
+    return df_fn
 
 
 # -------------------------
@@ -188,19 +243,22 @@ def report_fitted_model(name, model, X_train, y_train, X_test, y_test, labels, r
     print(classification_report(y_test, test_pred, labels=labels, zero_division=0))
 
     # Save confusion matrices as figures
-    slug = safe_slug(name)
+    prefix = model_to_filename_prefix(name)
     save_confusion_matrix_png(
         cm, labels,
         title=f"{name} Confusion Matrix (Test, counts)",
-        out_path=os.path.join(results_dir, f"{slug}_cm_test_counts.png"),
+        out_path=os.path.join(results_dir, f"{prefix}_cm_test_counts.png"),
         normalise=False
     )
     save_confusion_matrix_png(
         cm, labels,
         title=f"{name} Confusion Matrix (Test, normalised)",
-        out_path=os.path.join(results_dir, f"{slug}_cm_test_normalised.png"),
+        out_path=os.path.join(results_dir, f"{prefix}_cm_test_normalised.png"),
         normalise=True
     )
+
+    # False negatives and per-class recall analysis (saved to CSV + printed summary)
+    save_false_negative_analysis(cm, labels, name, results_dir, top_k=3)
 
     return {
         "model": name,
@@ -614,6 +672,9 @@ save_confusion_matrix_png(
     out_path=os.path.join(RESULTS_DIR, "knn_cm_test_normalised.png"),
     normalise=True
 )
+
+# False negatives and per-class recall analysis (saved to CSV + printed summary)
+save_false_negative_analysis(knn_cm, labels, "kNN", RESULTS_DIR, top_k=3)
 
 knn_metrics = {
     "model": "kNN",

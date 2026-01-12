@@ -99,14 +99,18 @@ def read_best_supervised_if_exists():
 
 
 # -------------------------
-# 1) Load cleaned data (remove label for clustering)
+# load clean data 
 df = pd.read_csv(CLEAN_PATH)
 
+#finds all feature columns named f0-f63
 feature_cols = [c for c in df.columns if c.startswith("f")]
+#X is feature matrix
 X = df[feature_cols].values
+#y is true label per row
 y = df["label"].values
 
 labels_sorted = sorted(pd.Series(y).unique())
+#count how many classes exist use that as k for clustering
 k = len(labels_sorted)
 
 print("Loaded:", CLEAN_PATH)
@@ -116,15 +120,45 @@ print("Classes:", labels_sorted)
 print("Using k =", k)
 
 # -------------------------
-# 2) Z-score normalisation (lab guideline) :contentReference[oaicite:5]{index=5}
+# learns mean and std for each feature column, transforms to mean=0 and std=1
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
 # -------------------------
-# 3) PCA for visualisation (2D)
+# 2b) Elbow method for choosing k (objective function = KMeans inertia)
+# inertia is the within-cluster sum of squared distances to centroids
+# plot inertia vs k and look for where improvement slows ("elbow")
+
+k_min = 1
+k_max = min(20, len(X_scaled) - 1)
+k_values = list(range(k_min, k_max + 1))
+
+inertias = []
+
+for kk in k_values:
+    km = KMeans(n_clusters=kk, random_state=SEED, n_init=20)
+    km.fit(X_scaled)
+    inertias.append(km.inertia_)
+
+plt.figure(figsize=(7, 5))
+plt.plot(k_values, inertias, marker="o")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Inertia (within-cluster SSE)")
+plt.title("Elbow method: KMeans objective vs k")
+plt.tight_layout()
+
+elbow_path = os.path.join(RESULTS_DIR, "kmeans_elbow_inertia.png")
+plt.savefig(elbow_path, dpi=200)
+plt.close()
+
+print("\nSaved elbow plot to:", elbow_path)
+
+# -------------------------
+#reduces from D features down to 2 dimensions, used for plotting
 pca = PCA(n_components=2, random_state=SEED)
 X_2d = pca.fit_transform(X_scaled)
 
+#converts label strings into numbers 
 label_to_id = {lab: i for i, lab in enumerate(labels_sorted)}
 y_ids = np.array([label_to_id[lab] for lab in y])
 
@@ -136,9 +170,10 @@ save_scatter_2d(
 )
 
 # -------------------------
-# 4) K-means clustering (sklearn) :contentReference[oaicite:6]{index=6}
-# Lab example uses n_init=20; we follow that for consistency. :contentReference[oaicite:7]{index=7}
+# 4) K-means clustering (sklearn
+#n_init=20, 20 random starts and picks best one 
 kmeans = KMeans(n_clusters=k, random_state=SEED, n_init=20)
+#clusters data and returns cluster IDs
 km_clusters = kmeans.fit_predict(X_scaled)
 
 km_purity, km_cont, km_cluster_ids, _ = cluster_purity_and_table(y, km_clusters)
@@ -148,7 +183,7 @@ km_nmi = normalized_mutual_info_score(y, km_clusters)
 km_h, km_c, km_v = homogeneity_completeness_v_measure(y, km_clusters)
 km_sil = silhouette_score(X_scaled, km_clusters)
 
-print("\nK-means (k=10) effectiveness:")
+print(f"\nK-means (k={k}) effectiveness:")
 print("Purity:", round(km_purity, 4))
 print("ARI:", round(km_ari, 4))
 print("NMI:", round(km_nmi, 4))
@@ -171,7 +206,7 @@ save_heatmap(
 )
 
 # -------------------------
-# 5) Hierarchical clustering (Agglomerative)
+# ward linkage keeps clusters compact, returns cluster ID for each point 
 agg = AgglomerativeClustering(n_clusters=k, linkage="ward")
 agg_clusters = agg.fit_predict(X_scaled)
 

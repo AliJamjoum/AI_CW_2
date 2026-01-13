@@ -1,6 +1,6 @@
-import os #lets us loop through files and folders
-import cv2 #open cv reads images, mediapipe cant open images itself
-import mediapipe as mp #gives access to media pipe
+import os 
+import cv2 
+import mediapipe as mp 
 import pandas as pd #to save features into a csv file
 
 os.makedirs("../outputs", exist_ok=True) #ensures output directory exists
@@ -11,17 +11,17 @@ mp_hands = mp.solutions.hands # hand landmark detector
 
 
 hands = mp_hands.Hands(
-    static_image_mode=True, #says they are indepedent images (not video)
+    static_image_mode=True, # images not video
     max_num_hands=1, #one hand, one feature vector
-    min_detection_confidence=0.5 #default threshold, if confidence too low detection fails
+    min_detection_confidence=0.5 # if confidence is too low detection fails
 )
 
-rows = [] #each image is a row of data, put in list first then convert to df
+rows = [] #each image is a row of data
 failed_images = [] #track images where mediapipe fails
 
 #lists everything inside data
 for label in os.listdir(DATA_DIR):
-    #builds full path - safer than string concatenation
+    #builds full path
     label_path = os.path.join(DATA_DIR, label)
     if not os.path.isdir(label_path):
         #safety in case theres random things in data folder
@@ -48,17 +48,17 @@ for label in os.listdir(DATA_DIR):
         #runs hand + landmark detection, returns results object
         results = hands.process(image_rgb)
 
-        #if no landmarks detected, add to failed images (noise)
+        #if no landmarks detected, add to failed images
         if not results.multi_hand_landmarks:
             failed_images.append(image_path)
             continue
 
-        #.landmark is list of 21 hand points for one hand (0)
+        #.landmark is list of 21 hand points for one hand
         landmarks = results.multi_hand_landmarks[0].landmark
 
         features = [] #creates empty list for 63 numbers
 
-        #there are 21 landmarks with x, y, z. order guarantees consistent feature ordering and 63 val
+        #there are 21 landmarks with x, y, z
         for lm in landmarks:
             features.append(lm.x)
             features.append(lm.y)
@@ -75,7 +75,7 @@ for label in os.listdir(DATA_DIR):
 #generated column names, (instance_id, f1, f2... label) label is what letter it is
 columns = ["instance_id"] + [f"f{i}" for i in range(63)] + ["label"]
 
-#creates dataframe, index=False (prevents pandas adding extra 0..N index column)
+#creates dataframe
 df = pd.DataFrame(rows, columns=columns)
 df.to_csv("../outputs/landmarks_raw.csv", index=False)
 

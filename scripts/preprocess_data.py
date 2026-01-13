@@ -1,4 +1,4 @@
-# clean landmarks raw file and save cleaned version for knn + visualisers
+
 
 import os
 import pandas as pd
@@ -6,65 +6,70 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
-# input and output paths
+
 RAW_PATH = "../outputs/landmarks_raw.csv"
 CLEAN_PATH = "../outputs/landmarks_clean.csv"
 SUMMARY_PATH = "../outputs/preprocess_summary.txt"
 
-# visuals output
+
 VIS_DIR = "../outputs/preprocess_visuals"
 os.makedirs(VIS_DIR, exist_ok=True)
 
-# visualiser toggles
-MAKE_VISUALS = True
-HIST_CLASS = "B"      # pick A..J
-PCA_SEED = 2025
-PCA_MAX_POINTS = 2500  # downsample for readable plots if needed
 
-# make sure outputs folder exists (prevents file save errors)
+MAKE_VISUALS = True
+HIST_CLASS = "B"    
+PCA_SEED = 2025
+PCA_MAX_POINTS = 2500  
+
+
 os.makedirs("../outputs", exist_ok=True)
 
-# load raw landmarks table
+
 df = pd.read_csv(RAW_PATH)
 
-# identify feature columns (f0-f62)
+
 feature_cols = [c for c in df.columns if c.startswith("f")]
 
-# build x and y column lists (x is f0,f3,f6... and y is f1,f4,f7...), z would be f2
+
 x_cols = [f"f{i}" for i in range(0, 63, 3)]
 y_cols = [f"f{i}" for i in range(1, 63, 3)]
 
 def label_counts(frame: pd.DataFrame) -> pd.Series:
     return frame["label"].value_counts().sort_index()
 
-# stores stats as we go
+
 log_lines = []
 
-# base snapshot
+
 log_lines.append(f"Baseline shape: {df.shape}")
 log_lines.append("Class counts (before):")
 log_lines.append(label_counts(df).to_string())
 
 # STEP 1 KEEP EXPECTED LABELS
+
 valid_labels = set(list("ABCDEFGHIJ"))
 before_rows = len(df)
 df = df[df["label"].isin(valid_labels)].copy()
 log_lines.append(f"Removed invalid-label rows: {before_rows - len(df)}")
 
 # Step 2: Ensure all feature columns are numeric (anything weird becomes NaN)
+
 df[feature_cols] = df[feature_cols].apply(pd.to_numeric, errors="coerce")
 
 # Step 3: Drop any rows with missing feature values
+
 before_rows = len(df)
 df = df.dropna(subset=feature_cols).copy()
 log_lines.append(f"Dropped rows with missing features: {before_rows - len(df)}")
 
 # Step 4: Drop duplicate instance_id rows (keep first occurrence)
+
 before_rows = len(df)
 df = df.drop_duplicates(subset=["instance_id"], keep="first").copy()
 log_lines.append(f"Dropped duplicate instance_id rows: {before_rows - len(df)}")
 
 # Step 5: Drop rows with x or y outside [0, 1] (MediaPipe x,y are normalised)
+
 before_rows = len(df)
 x_ok = df[x_cols].ge(0).all(axis=1) & df[x_cols].le(1).all(axis=1)
 y_ok = df[y_cols].ge(0).all(axis=1) & df[y_cols].le(1).all(axis=1)
@@ -72,6 +77,7 @@ df = df[x_ok & y_ok].copy()
 log_lines.append(f"Dropped rows with x/y out of range: {before_rows - len(df)}")
 
 # Step 6: normalise landmarks, align mirrored samples, then remove intra-class outliers
+
 MAD_K = 3.5
 MAD_EPS = 1e-12
 do_outlier_removal = True
@@ -79,11 +85,11 @@ do_outlier_removal = True
 def normalise_row_to_vec(row: pd.Series) -> np.ndarray:
     pts = row[feature_cols].to_numpy(dtype=float).reshape(21, 3)
 
-    # translate: move wrist (landmark 0) to origin
+    
     wrist = pts[0].copy()
     pts = pts - wrist
 
-    # scale: divide by max distance from wrist
+    
     dists = np.sqrt((pts ** 2).sum(axis=1))
     scale = float(dists.max())
     if scale > 1e-9:
@@ -91,7 +97,7 @@ def normalise_row_to_vec(row: pd.Series) -> np.ndarray:
 
     return pts.reshape(-1)
 
-# indices of x components in flattened vector (x,y,z repeated)
+
 x_idx = np.arange(0, 63, 3)
 
 def mirror_vec(v: np.ndarray) -> np.ndarray:
@@ -111,20 +117,20 @@ def flip_original_features_inplace(frame: pd.DataFrame, row_indices: np.ndarray)
 
 before_rows = len(df)
 
-# build normalised vectors for all samples (N,63)
+
 norm_vectors = [normalise_row_to_vec(df.iloc[i]) for i in range(len(df))]
 norm_vectors = np.vstack(norm_vectors)
 
 labels = df["label"].to_numpy()
 
-# first pass: compute initial means per class
+
 class_means = {}
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
     if len(idx) > 0:
         class_means[lab] = norm_vectors[idx].mean(axis=0)
 
-# second pass: align each sample by choosing original or mirrored, whichever is closer to its class mean
+
 aligned_vectors = norm_vectors.copy()
 mirror_chosen = np.zeros(len(df), dtype=bool)
 mirrored_count = 0
@@ -149,18 +155,18 @@ for i in range(len(df)):
 
 log_lines.append(f"Mirror-aligned samples (chosen mirrored orientation): {mirrored_count} / {len(df)}")
 
-# apply mirror choice to ORIGINAL feature columns
+
 mirrored_indices = np.where(mirror_chosen)[0]
 flip_original_features_inplace(df, mirrored_indices)
 
-# recompute class means using aligned vectors
+
 class_means_aligned = {}
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
     if len(idx) > 0:
         class_means_aligned[lab] = aligned_vectors[idx].mean(axis=0)
 
-# compute distance-to-mean for aligned vectors
+
 dist_to_mean = np.zeros(len(df), dtype=float)
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
@@ -170,20 +176,20 @@ for lab in sorted(pd.Series(labels).unique()):
     diffs = aligned_vectors[idx] - mean_vec
     dist_to_mean[idx] = np.sqrt((diffs ** 2).sum(axis=1))
 
-# store distances for logging/debug
+
 df["dist_to_class_mean"] = dist_to_mean
 df["mirror_aligned"] = mirror_chosen
 
-# snapshot for visuals: state BEFORE outlier removal
+
 df_before_outliers = df.copy()
 aligned_vectors_before_outliers = aligned_vectors.copy()
 labels_before_outliers = labels.copy()
 
-# outlier removal metadata (always define so visuals can use them)
+
 removed_by_label = {lab: 0 for lab in sorted(pd.Series(labels).unique())}
 cutoffs_by_label = {lab: np.nan for lab in sorted(pd.Series(labels).unique())}
 
-# robust outlier removal: Median + MAD per class
+
 if do_outlier_removal:
     keep_mask = np.ones(len(df), dtype=bool)
 
@@ -225,7 +231,7 @@ else:
     aligned_vectors_after_outliers = aligned_vectors_before_outliers
     labels_after_outliers = labels_before_outliers
 
-# Final snapshot
+
 log_lines.append(f"Final shape: {df.shape}")
 log_lines.append("Class counts (after):")
 log_lines.append(label_counts(df).to_string())
@@ -268,14 +274,14 @@ def save_distance_histogram_for_class(frame_before: pd.DataFrame, lab: str, cuto
     plt.close()
 
 def save_pca_scatter(X: np.ndarray, y: np.ndarray, out_path: str, title: str, seed: int):
-    # downsample for readability
+ 
     X_ds, y_ds = _maybe_downsample(X, y, PCA_MAX_POINTS, seed)
 
     pca = PCA(n_components=2, random_state=seed)
     X2 = pca.fit_transform(X_ds)
 
     plt.figure(figsize=(7, 5))
-    # map labels to integers for consistent colouring
+    
     labs_sorted = sorted(pd.Series(y_ds).unique())
     lab_to_int = {lab: i for i, lab in enumerate(labs_sorted)}
     c = np.array([lab_to_int[v] for v in y_ds])
@@ -289,7 +295,7 @@ def save_pca_scatter(X: np.ndarray, y: np.ndarray, out_path: str, title: str, se
     plt.close()
 
 if MAKE_VISUALS:
-    # 1) Histogram for one class, with cutoff line
+    
     save_distance_histogram_for_class(
         frame_before=df_before_outliers,
         lab=HIST_CLASS,
@@ -297,7 +303,7 @@ if MAKE_VISUALS:
         out_path=os.path.join(VIS_DIR, f"hist_dist_class_{HIST_CLASS}.png"),
     )
 
-    # 2) PCA before outlier removal (after mirror alignment, before filtering)
+    
     save_pca_scatter(
         X=aligned_vectors_before_outliers,
         y=labels_before_outliers,
@@ -306,7 +312,7 @@ if MAKE_VISUALS:
         seed=PCA_SEED,
     )
 
-    # 3) PCA after outlier removal (final cleaned set)
+    
     save_pca_scatter(
         X=aligned_vectors_after_outliers,
         y=labels_after_outliers,
@@ -315,8 +321,7 @@ if MAKE_VISUALS:
         seed=PCA_SEED,
     )
 
-    # 4) Stacked bar chart: retained vs removed per class (slide-ready)
-    # Use your counts from logs by recomputing here safely
+    
     before_counts = label_counts(df_before_outliers)
     after_counts = label_counts(df)
 
@@ -325,8 +330,8 @@ if MAKE_VISUALS:
     removed = np.array([before_counts.get(c, 0) for c in classes_sorted]) - retained
 
     plt.figure(figsize=(8, 5))
-    plt.bar(classes_sorted, retained, label="Retained after preprocessing", color="#1f4fd8")  # dark blue
-    plt.bar(classes_sorted, removed, bottom=retained, label="Removed during preprocessing", color="#9ec9ff")  # light blue
+    plt.bar(classes_sorted, retained, label="Retained after preprocessing", color="#1f4fd8") 
+    plt.bar(classes_sorted, removed, bottom=retained, label="Removed during preprocessing", color="#9ec9ff") 
     plt.title("Effect of preprocessing on class distributions")
     plt.xlabel("Class label")
     plt.ylabel("Number of samples")
@@ -335,14 +340,14 @@ if MAKE_VISUALS:
     plt.savefig(os.path.join(VIS_DIR, "stacked_counts_retained_removed.png"), dpi=200)
     plt.close()
 
-# Save cleaned dataset
+
 df.to_csv(CLEAN_PATH, index=False)
 
-# Save a preprocessing summary for your report and slides
+
 with open(SUMMARY_PATH, "w") as f:
     f.write("\n".join(log_lines) + "\n")
 
-# Console output so you can quickly verify it worked
+
 print("Saved cleaned data to:", CLEAN_PATH)
 print("Saved summary to:", SUMMARY_PATH)
 print("Saved visuals to:", VIS_DIR)

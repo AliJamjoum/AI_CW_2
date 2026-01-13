@@ -1,20 +1,18 @@
-# train_and_evaluate.py
-# Part 2c main pipeline: load cleaned data, split, set up CV, optimise and evaluate supervised models.
-# This version also saves figures (confusion matrices + comparison charts) and a CSV summary into RESULTS_DIR.
 
-import os  # standard library: used for creating folders and building file paths
-import math  # standard library: used for sqrt and other maths in kNN
-from collections import Counter  # standard library: majority vote counting
 
-import pandas as pd  # allowed for data handling
+import os  
+import math  
+from collections import Counter  
+
+import pandas as pd  
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sklearn.model_selection import train_test_split, StratifiedKFold  # splitting + CV strategy
-from sklearn.model_selection import cross_val_score  # runs CV scoring
-from sklearn.tree import DecisionTreeClassifier  # decision tree model
+from sklearn.model_selection import train_test_split, StratifiedKFold 
+from sklearn.model_selection import cross_val_score  
+from sklearn.tree import DecisionTreeClassifier  
 
-# Evaluation metrics (sklearn)
+
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -25,24 +23,22 @@ from sklearn.metrics import (
     classification_report
 )
 
-from sklearn.pipeline import Pipeline  # chaining preprocessing + model
-from sklearn.preprocessing import StandardScaler  # scaling for Logistic Regression
-from sklearn.linear_model import LogisticRegression  # third classifier
+from sklearn.pipeline import Pipeline  
+from sklearn.preprocessing import StandardScaler  
+from sklearn.linear_model import LogisticRegression 
 
 
-# -------------------------
-# 1) Paths and reproducibility settings
-
-SEED = 2025  # one place to control randomness for reproducibility
-
-CLEAN_PATH = "../outputs/landmarks_clean.csv"  # where your cleaned features live
-RESULTS_DIR = "../outputs/part2c_results"  # where results will be saved (tables, plots, etc.)
-
-os.makedirs(RESULTS_DIR, exist_ok=True)  # create results folder if it does not exist
 
 
-# -------------------------
-# Figure helpers (saves PNGs into RESULTS_DIR)
+SEED = 2025  
+
+CLEAN_PATH = "../outputs/landmarks_clean.csv"
+RESULTS_DIR = "../outputs/part2c_results"  
+
+os.makedirs(RESULTS_DIR, exist_ok=True)  
+
+
+
 
 def save_confusion_matrix_png(cm, labels, title, out_path, normalise=False):
     """
@@ -126,7 +122,7 @@ def save_false_negative_analysis(cm, labels, model_name, results_dir, top_k=3):
         else:
             recall[i] = 0.0
 
-    # Build per-class table
+    
     df_fn = pd.DataFrame({
         "label": labels,
         "true_count": row_sums.astype(int),
@@ -135,12 +131,12 @@ def save_false_negative_analysis(cm, labels, model_name, results_dir, top_k=3):
         "recall": recall
     })
 
-    # Save CSV
+    
     prefix = model_to_filename_prefix(model_name)
     out_csv = os.path.join(results_dir, f"{prefix}_false_negatives_per_class.csv")
     df_fn.to_csv(out_csv, index=False)
 
-    # Print top-k worst FN and lowest recall (usually similar, but not always)
+ 
     worst_by_fn = df_fn.sort_values(["false_negatives", "true_count"], ascending=[False, False]).head(top_k)
     worst_by_recall = df_fn.sort_values(["recall", "true_count"], ascending=[True, False]).head(top_k)
 
@@ -156,29 +152,25 @@ def save_false_negative_analysis(cm, labels, model_name, results_dir, top_k=3):
     return df_fn
 
 
-# -------------------------
-# 2) Load cleaned data
 
-df = pd.read_csv(CLEAN_PATH)  # reads clean features into a dataframe
 
-# 3) X is input features and y is labels
-feature_cols = [c for c in df.columns if c.startswith("f")]  # selects feature columns f0..f62
-X = df[feature_cols].values  # array of features
-y = df["label"].values  # array of labels (A..J)
+df = pd.read_csv(CLEAN_PATH)  
 
-# Derive labels dynamically to avoid hardcoding A..J
-# Keeps confusion matrices correct even if a class is missing in a split.
+
+feature_cols = [c for c in df.columns if c.startswith("f")] 
+X = df[feature_cols].values  
+y = df["label"].values  
+
 labels = sorted(pd.Series(y).unique())
 
 
-# -------------------------
-# 4) Stratified train-test split
+
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    stratify=y,  # preserves label distribution in train and test
+    stratify=y,
     random_state=SEED
 )
 
@@ -186,7 +178,7 @@ print("Total instances:", len(y))
 print("Training instances:", len(y_train))
 print("Test instances:", len(y_test))
 
-# Print class distribution to sanity check split
+
 train_counts = pd.Series(y_train).value_counts().sort_index()
 test_counts = pd.Series(y_test).value_counts().sort_index()
 
@@ -196,15 +188,12 @@ print("\nClass counts (test):")
 print(test_counts.to_string())
 
 
-# -------------------------
-# 5) CV setup
+
 
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
 print("\nCV setup: 5-fold StratifiedKFold with shuffle=True and random_state=", SEED)
 
 
-# -------------------------
-# Helper: Evaluate a fitted sklearn model cleanly (Decision Tree and Logistic Regression)
 def report_fitted_model(name, model, X_train, y_train, X_test, y_test, labels, results_dir):
     """
     Print train and test accuracy, balanced accuracy, macro metrics (precision/recall/F1),
@@ -242,7 +231,7 @@ def report_fitted_model(name, model, X_train, y_train, X_test, y_test, labels, r
     print("\nPer class report (test):")
     print(classification_report(y_test, test_pred, labels=labels, zero_division=0))
 
-    # Save confusion matrices as figures
+
     prefix = model_to_filename_prefix(name)
     save_confusion_matrix_png(
         cm, labels,
@@ -257,7 +246,7 @@ def report_fitted_model(name, model, X_train, y_train, X_test, y_test, labels, r
         normalise=True
     )
 
-    # False negatives and per-class recall analysis (saved to CSV + printed summary)
+ 
     save_false_negative_analysis(cm, labels, name, results_dir, top_k=3)
 
     return {
@@ -272,9 +261,9 @@ def report_fitted_model(name, model, X_train, y_train, X_test, y_test, labels, r
     }
 
 
-# =========================================================
+# ========================================================
 # DECISION TREE
-# =========================================================
+# ========================================================
 
 dt_default = DecisionTreeClassifier(random_state=SEED)
 
@@ -289,7 +278,7 @@ print("Balanced accuracy folds:", dt_cv_bal)
 print("Balanced accuracy mean:", dt_cv_bal.mean())
 print("Balanced accuracy std:", dt_cv_bal.std())
 
-# Hyperparameters (trimmed)
+
 max_depth_grid = [None, 10, 20]
 min_samples_leaf_grid = [1, 5, 10]
 class_weight_grid = [None, "balanced"]
@@ -320,7 +309,7 @@ for depth in max_depth_grid:
             scores = cross_val_score(dt, X_train, y_train, cv=cv, scoring="balanced_accuracy", n_jobs=-1)
             mean_score = scores.mean()
 
-            # Tie-break: if equal score, prefer simpler (smaller depth, larger leaf)
+         
             is_better = mean_score > best_dt_cv_mean
             if (not is_better) and (abs(mean_score - best_dt_cv_mean) < 1e-12) and (best_dt_params is not None):
                 current_depth = 10**9 if depth is None else depth
@@ -410,14 +399,16 @@ best_lr.fit(X_train, y_train)
 lr_metrics = report_fitted_model("Logistic Regression", best_lr, X_train, y_train, X_test, y_test, labels, RESULTS_DIR)
 
 
-# =========================================================
-# kNN (manual implementation, standard library only)
-# =========================================================
+# ====================================================
+# kNN
+# ====================================================
 
+# this function computes the mean and std for each feature
+# it only uses the training data to avoid data leakage
 def compute_standardisation_params(X_rows):
     """
-    Compute per-feature mean and std from X_rows (list of lists).
-    Standard library only.
+    compute per-feature mean and std from training rows
+    this is needed because knn is distance based
     """
     n = len(X_rows)
     d = len(X_rows[0])
@@ -436,14 +427,17 @@ def compute_standardisation_params(X_rows):
             stds[j] += diff * diff
     for j in range(d):
         stds[j] = math.sqrt(stds[j] / n)
+        # prevent divide by zero
         if stds[j] == 0.0:
             stds[j] = 1e-12
 
     return means, stds
 
 
+# apply (x - mean) / std to each feature
+# this puts all features on the same scale
 def standardise_dataset(X_rows, means, stds):
-    """Apply standardisation: (x - mean) / std."""
+    """standardise dataset using training means and stds"""
     scaled = []
     for row in X_rows:
         new_row = []
@@ -453,16 +447,21 @@ def standardise_dataset(X_rows, means, stds):
     return scaled
 
 
+# convert numpy arrays to python lists for manual looping
 X_train_list = X_train.tolist()
 X_test_list = X_test.tolist()
 y_train_list = list(y_train)
 y_test_list = list(y_test)
 
+# compute scaling parameters from training data only
 knn_means, knn_stds = compute_standardisation_params(X_train_list)
+
+# scale training and test sets using training statistics
 X_train_scaled = standardise_dataset(X_train_list, knn_means, knn_stds)
 X_test_scaled = standardise_dataset(X_test_list, knn_means, knn_stds)
 
 
+# euclidean distance (straight line distance)
 def euclidean_distance(a, b):
     total = 0.0
     for i in range(len(a)):
@@ -471,6 +470,7 @@ def euclidean_distance(a, b):
     return math.sqrt(total)
 
 
+# manhattan distance (sum of absolute differences)
 def manhattan_distance(a, b):
     total = 0.0
     for i in range(len(a)):
@@ -478,39 +478,54 @@ def manhattan_distance(a, b):
     return total
 
 
-def knn_predict_single(x_test, X_train_rows, y_train_rows, k, weighting="uniform", metric="euclidean"):
+# predict a single test sample using knn
+# supports uniform voting or distance weighted voting
+def knn_predict_single(x_test, X_train_rows, y_train_rows,
+                       k, weighting="uniform", metric="euclidean"):
+
     distances = []
 
+    # choose distance function
     if metric == "euclidean":
         dist_fn = euclidean_distance
     else:
         dist_fn = manhattan_distance
 
+    # compute distance to every training sample
     for i in range(len(X_train_rows)):
         d = dist_fn(x_test, X_train_rows[i])
         distances.append((d, y_train_rows[i]))
 
+    # sort neighbours by distance and keep k closest
     distances.sort(key=lambda t: t[0])
     neighbours = distances[:k]
 
+    # uniform voting just counts labels
     if weighting == "uniform":
         votes = [label for _, label in neighbours]
         return Counter(votes).most_common(1)[0][0]
 
+    # distance weighting gives closer neighbours more influence
     weights = {}
     for d, label in neighbours:
         w = 1.0 / (d + 1e-8)
         weights[label] = weights.get(label, 0.0) + w
+
     return max(weights.items(), key=lambda t: t[1])[0]
 
 
-def knn_predict_dataset(X_test_rows, X_train_rows, y_train_rows, k, weighting, metric):
+# run knn prediction for a full dataset
+def knn_predict_dataset(X_test_rows, X_train_rows, y_train_rows,
+                        k, weighting, metric):
     predictions = []
     for x in X_test_rows:
-        predictions.append(knn_predict_single(x, X_train_rows, y_train_rows, k, weighting, metric))
+        predictions.append(
+            knn_predict_single(x, X_train_rows, y_train_rows, k, weighting, metric)
+        )
     return predictions
 
 
+# simple accuracy = correct predictions / total
 def simple_accuracy(y_true, y_pred):
     correct = 0
     for i in range(len(y_true)):
@@ -519,8 +534,10 @@ def simple_accuracy(y_true, y_pred):
     return correct / len(y_true)
 
 
+# balanced accuracy = average recall across all classes
 def balanced_accuracy_manual(y_true, y_pred, all_labels):
     recalls = []
+
     for lab in all_labels:
         tp = 0
         fn = 0
@@ -540,6 +557,7 @@ def balanced_accuracy_manual(y_true, y_pred, all_labels):
     return sum(recalls) / len(recalls)
 
 
+# count tp, fp and fn for each class
 def per_class_counts(y_true, y_pred, all_labels):
     counts = {}
     for lab in all_labels:
@@ -558,6 +576,7 @@ def per_class_counts(y_true, y_pred, all_labels):
     return {lab: (counts[lab][0], counts[lab][1], counts[lab][2]) for lab in all_labels}
 
 
+# compute macro precision, recall and f1
 def macro_precision_recall_f1_manual(y_true, y_pred, all_labels):
     counts = per_class_counts(y_true, y_pred, all_labels)
 
@@ -593,6 +612,36 @@ def macro_precision_recall_f1_manual(y_true, y_pred, all_labels):
     )
 
 
+# baseline knn configuration before tuning
+BASELINE_K = 5
+BASELINE_WEIGHTING = "uniform"
+BASELINE_METRIC = "euclidean"
+
+# run 5-fold cv on training set only for baseline knn
+baseline_fold_scores = []
+
+for train_idx, val_idx in cv.split(X_train_scaled, y_train_list):
+    X_tr = [X_train_scaled[i] for i in train_idx]
+    y_tr = [y_train_list[i] for i in train_idx]
+    X_val = [X_train_scaled[i] for i in val_idx]
+    y_val = [y_train_list[i] for i in val_idx]
+
+    preds = knn_predict_dataset(
+        X_val, X_tr, y_tr,
+        BASELINE_K, BASELINE_WEIGHTING, BASELINE_METRIC
+    )
+
+    bal = balanced_accuracy_manual(y_val, preds, labels)
+    baseline_fold_scores.append(bal)
+
+baseline_knn_cv_mean = sum(baseline_fold_scores) / len(baseline_fold_scores)
+baseline_knn_cv_std = (
+    sum((s - baseline_knn_cv_mean) ** 2 for s in baseline_fold_scores)
+    / len(baseline_fold_scores)
+) ** 0.5
+
+
+# grids for tuning knn hyperparameters
 k_grid = [1, 3, 5, 7, 9, 11]
 weighting_grid = ["uniform", "distance"]
 metric_grid = ["euclidean", "manhattan"]
@@ -600,9 +649,11 @@ metric_grid = ["euclidean", "manhattan"]
 best_knn_params = None
 best_knn_cv_mean = -1.0
 
+# grid search using balanced accuracy
 for k in k_grid:
     for weighting in weighting_grid:
         for metric in metric_grid:
+
             fold_scores = []
 
             for train_idx, val_idx in cv.split(X_train_scaled, y_train_list):
@@ -611,31 +662,45 @@ for k in k_grid:
                 X_val = [X_train_scaled[i] for i in val_idx]
                 y_val = [y_train_list[i] for i in val_idx]
 
-                preds = knn_predict_dataset(X_val, X_tr, y_tr, k, weighting, metric)
+                preds = knn_predict_dataset(
+                    X_val, X_tr, y_tr, k, weighting, metric
+                )
                 bal = balanced_accuracy_manual(y_val, preds, labels)
                 fold_scores.append(bal)
 
             mean_score = sum(fold_scores) / len(fold_scores)
 
+            # tie break: if scores are equal, prefer smaller k
             is_better = mean_score > best_knn_cv_mean
-            if (not is_better) and (abs(mean_score - best_knn_cv_mean) < 1e-12) and (best_knn_params is not None):
+            if (not is_better) and abs(mean_score - best_knn_cv_mean) < 1e-12 and best_knn_params is not None:
                 if k < best_knn_params["k"]:
                     is_better = True
 
             if is_better:
                 best_knn_cv_mean = mean_score
-                best_knn_params = {"k": k, "weighting": weighting, "metric": metric}
+                best_knn_params = {
+                    "k": k,
+                    "weighting": weighting,
+                    "metric": metric
+                }
 
-print("\nkNN (tuned) - best CV result (balanced accuracy):")
-print("Best params:", best_knn_params)
-print("Best mean CV balanced accuracy:", best_knn_cv_mean)
 
+# evaluate best knn on train and test sets
 best_k = best_knn_params["k"]
 best_weighting = best_knn_params["weighting"]
 best_metric = best_knn_params["metric"]
 
-knn_train_pred = knn_predict_dataset(X_train_scaled, X_train_scaled, y_train_list, best_k, best_weighting, best_metric)
-knn_test_pred = knn_predict_dataset(X_test_scaled, X_train_scaled, y_train_list, best_k, best_weighting, best_metric)
+# training accuracy
+knn_train_pred = knn_predict_dataset(
+    X_train_scaled, X_train_scaled, y_train_list,
+    best_k, best_weighting, best_metric
+)
+
+# test accuracy using training set as reference
+knn_test_pred = knn_predict_dataset(
+    X_test_scaled, X_train_scaled, y_train_list,
+    best_k, best_weighting, best_metric
+)
 
 knn_train_acc = simple_accuracy(y_train_list, knn_train_pred)
 knn_test_acc = simple_accuracy(y_test_list, knn_test_pred)
@@ -643,7 +708,9 @@ knn_test_acc = simple_accuracy(y_test_list, knn_test_pred)
 knn_train_bal = balanced_accuracy_manual(y_train_list, knn_train_pred, labels)
 knn_test_bal = balanced_accuracy_manual(y_test_list, knn_test_pred, labels)
 
-knn_macro_p, knn_macro_r, knn_macro_f1 = macro_precision_recall_f1_manual(y_test_list, knn_test_pred, labels)
+knn_macro_p, knn_macro_r, knn_macro_f1 = macro_precision_recall_f1_manual(
+    y_test_list, knn_test_pred, labels
+)
 
 print("\nkNN (best) performance:")
 print("Train accuracy:", knn_train_acc)
@@ -673,7 +740,7 @@ save_confusion_matrix_png(
     normalise=True
 )
 
-# False negatives and per-class recall analysis (saved to CSV + printed summary)
+
 save_false_negative_analysis(knn_cm, labels, "kNN", RESULTS_DIR, top_k=3)
 
 knn_metrics = {
@@ -687,8 +754,6 @@ knn_metrics = {
     "test_macro_f1": knn_macro_f1,
 }
 
-# -------------------------
-# Save summary CSV + comparison charts (great for slides and poster)
 
 summary_rows = [dt_metrics, lr_metrics, knn_metrics]
 save_results_summary_csv(summary_rows, os.path.join(RESULTS_DIR, "supervised_results_summary.csv"))

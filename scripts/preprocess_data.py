@@ -1,60 +1,61 @@
-# clean landmarks raw file and save cleaned version for knn
+# clean landmarks raw file and save cleaned version for knn + visualisers
 
 import os
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 # input and output paths
 RAW_PATH = "../outputs/landmarks_raw.csv"
 CLEAN_PATH = "../outputs/landmarks_clean.csv"
 SUMMARY_PATH = "../outputs/preprocess_summary.txt"
 
+# visuals output
+VIS_DIR = "../outputs/preprocess_visuals"
+os.makedirs(VIS_DIR, exist_ok=True)
+
+# visualiser toggles
+MAKE_VISUALS = True
+HIST_CLASS = "B"      # pick A..J
+PCA_SEED = 2025
+PCA_MAX_POINTS = 2500  # downsample for readable plots if needed
+
 # make sure outputs folder exists (prevents file save errors)
 os.makedirs("../outputs", exist_ok=True)
 
-#load raw landmarks table
+# load raw landmarks table
 df = pd.read_csv(RAW_PATH)
 
-#identify feature columns (f0-f62)
+# identify feature columns (f0-f62)
 feature_cols = [c for c in df.columns if c.startswith("f")]
 
-# build x and y column lists (x is f0,f3,f6... and y is f1,f4,f7...), z woiuld be f2
+# build x and y column lists (x is f0,f3,f6... and y is f1,f4,f7...), z would be f2
 x_cols = [f"f{i}" for i in range(0, 63, 3)]
 y_cols = [f"f{i}" for i in range(1, 63, 3)]
 
-#selects the label column. counts how mant times each label appears, sorts count by label name
 def label_counts(frame: pd.DataFrame) -> pd.Series:
     return frame["label"].value_counts().sort_index()
 
-#stores stats as we go
+# stores stats as we go
 log_lines = []
 
-#base snapshot - df.shape returns a tuple, f makes it formatted string
+# base snapshot
 log_lines.append(f"Baseline shape: {df.shape}")
 log_lines.append("Class counts (before):")
-#counts how many samples and converts formatted series into text
 log_lines.append(label_counts(df).to_string())
 
 # STEP 1 KEEP EXPECTED LABELS
-
-#set showing allowed asl labels
 valid_labels = set(list("ABCDEFGHIJ"))
-#no of rows before diltering
 before_rows = len(df)
-
-#boolean mask inside [] means a list/series of true/false values
-#keeps only rows where mask is true, copies into a df
 df = df[df["label"].isin(valid_labels)].copy()
-#says how many are removed
 log_lines.append(f"Removed invalid-label rows: {before_rows - len(df)}")
 
 # Step 2: Ensure all feature columns are numeric (anything weird becomes NaN)
-#selects only feature cols + runs a function to convert value to numbers. coerce = NaN
 df[feature_cols] = df[feature_cols].apply(pd.to_numeric, errors="coerce")
 
 # Step 3: Drop any rows with missing feature values
 before_rows = len(df)
-#removes rows with missing values in featues
 df = df.dropna(subset=feature_cols).copy()
 log_lines.append(f"Dropped rows with missing features: {before_rows - len(df)}")
 
@@ -70,39 +71,30 @@ y_ok = df[y_cols].ge(0).all(axis=1) & df[y_cols].le(1).all(axis=1)
 df = df[x_ok & y_ok].copy()
 log_lines.append(f"Dropped rows with x/y out of range: {before_rows - len(df)}")
 
-# Step 6 (Advanced): normalise landmarks, align mirrored samples, then remove intra-class outliers
-# idea:
-# 1) normalise each sample (wrist-centre + scale) so we compare shape not position/size
-# 2) for each class, compute a mean "template" shape
-# 3) for each sample, compare original vs mirrored and keep whichever matches the template better
-# 4) remove only extreme outliers per class using a robust cutoff (Median + MAD) instead of forcing top 5%
-
-MAD_K = 3.5  # higher = less aggressive, lower = more aggressive
-MAD_EPS = 1e-12  # prevents edge-case issues if MAD is ~0
-do_outlier_removal = True  # set False if you only want alignment and no removals
+# Step 6: normalise landmarks, align mirrored samples, then remove intra-class outliers
+MAD_K = 3.5
+MAD_EPS = 1e-12
+do_outlier_removal = True
 
 def normalise_row_to_vec(row: pd.Series) -> np.ndarray:
-    # reshape f0..f62 into (21,3)
     pts = row[feature_cols].to_numpy(dtype=float).reshape(21, 3)
 
-    # translate: move wrist (landmark 0) to origin so position doesn't matter
+    # translate: move wrist (landmark 0) to origin
     wrist = pts[0].copy()
     pts = pts - wrist
 
-    # scale: divide by max distance from wrist so size/zoom doesn't matter
+    # scale: divide by max distance from wrist
     dists = np.sqrt((pts ** 2).sum(axis=1))
     scale = float(dists.max())
     if scale > 1e-9:
         pts = pts / scale
 
-    # flatten back to 63
     return pts.reshape(-1)
 
 # indices of x components in flattened vector (x,y,z repeated)
 x_idx = np.arange(0, 63, 3)
 
 def mirror_vec(v: np.ndarray) -> np.ndarray:
-    # mirror across vertical axis by negating x AFTER wrist-centering
     v2 = v.copy()
     v2[x_idx] *= -1
     return v2
@@ -110,18 +102,11 @@ def mirror_vec(v: np.ndarray) -> np.ndarray:
 def flip_original_features_inplace(frame: pd.DataFrame, row_indices: np.ndarray) -> None:
     """
     If a sample was mirror-aligned in the normalised space (x *= -1),
-    we want the saved features (the ones we train on) to match that choice.
-
-    In original MediaPipe coordinates where x is in [0,1], a horizontal mirror is:
+    flip the ORIGINAL MediaPipe x coordinates so training uses the mirrored features:
       x -> 1 - x
-    y and z stay the same.
-
-    This function applies that flip in-place to the frame's feature columns,
-    only for the specified row indices.
     """
     if len(row_indices) == 0:
         return
-    # x columns are f0,f3,f6,...
     frame.loc[frame.index[row_indices], x_cols] = 1.0 - frame.loc[frame.index[row_indices], x_cols]
 
 before_rows = len(df)
@@ -132,7 +117,7 @@ norm_vectors = np.vstack(norm_vectors)
 
 labels = df["label"].to_numpy()
 
-# first pass: compute initial means (templates) per class
+# first pass: compute initial means per class
 class_means = {}
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
@@ -164,19 +149,18 @@ for i in range(len(df)):
 
 log_lines.append(f"Mirror-aligned samples (chosen mirrored orientation): {mirrored_count} / {len(df)}")
 
-# IMPORTANT: apply the mirror choice to the ORIGINAL feature columns so training uses the mirrored features
-# (x -> 1 - x in original coordinate space)
+# apply mirror choice to ORIGINAL feature columns
 mirrored_indices = np.where(mirror_chosen)[0]
 flip_original_features_inplace(df, mirrored_indices)
 
-# recompute class means using aligned vectors (better templates after alignment)
+# recompute class means using aligned vectors
 class_means_aligned = {}
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
     if len(idx) > 0:
         class_means_aligned[lab] = aligned_vectors[idx].mean(axis=0)
 
-# compute distance-to-mean for aligned vectors (this is what we use for outlier detection)
+# compute distance-to-mean for aligned vectors
 dist_to_mean = np.zeros(len(df), dtype=float)
 for lab in sorted(pd.Series(labels).unique()):
     idx = np.where(labels == lab)[0]
@@ -190,11 +174,18 @@ for lab in sorted(pd.Series(labels).unique()):
 df["dist_to_class_mean"] = dist_to_mean
 df["mirror_aligned"] = mirror_chosen
 
-# optional: remove the most extreme outliers within each class (ROBUST: Median + MAD)
+# snapshot for visuals: state BEFORE outlier removal
+df_before_outliers = df.copy()
+aligned_vectors_before_outliers = aligned_vectors.copy()
+labels_before_outliers = labels.copy()
+
+# outlier removal metadata (always define so visuals can use them)
+removed_by_label = {lab: 0 for lab in sorted(pd.Series(labels).unique())}
+cutoffs_by_label = {lab: np.nan for lab in sorted(pd.Series(labels).unique())}
+
+# robust outlier removal: Median + MAD per class
 if do_outlier_removal:
     keep_mask = np.ones(len(df), dtype=bool)
-    removed_by_label = {}
-    cutoffs_by_label = {}
 
     for lab in sorted(pd.Series(labels).unique()):
         class_mask = (df["label"] == lab).to_numpy()
@@ -218,17 +209,131 @@ if do_outlier_removal:
 
         removed_by_label[lab] = int((~class_keep).sum())
 
+    keep_mask_before_filter = keep_mask.copy()
+
     df = df[keep_mask].copy()
+
+    aligned_vectors_after_outliers = aligned_vectors_before_outliers[keep_mask_before_filter]
+    labels_after_outliers = labels_before_outliers[keep_mask_before_filter]
+
     log_lines.append(f"Dropped intra-class outliers (Median + MAD, MAD_K={MAD_K}): {before_rows - len(df)}")
     log_lines.append("Outliers removed per class:")
     log_lines.append(pd.Series(removed_by_label).sort_index().to_string())
     log_lines.append("Cutoff per class (distance threshold):")
     log_lines.append(pd.Series(cutoffs_by_label).sort_index().to_string())
+else:
+    aligned_vectors_after_outliers = aligned_vectors_before_outliers
+    labels_after_outliers = labels_before_outliers
 
 # Final snapshot
 log_lines.append(f"Final shape: {df.shape}")
 log_lines.append("Class counts (after):")
 log_lines.append(label_counts(df).to_string())
+
+# -------------------------
+# VISUALISERS
+# -------------------------
+def _maybe_downsample(X: np.ndarray, y: np.ndarray, max_points: int, seed: int):
+    if len(X) <= max_points:
+        return X, y
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(X), size=max_points, replace=False)
+    return X[idx], y[idx]
+
+def save_distance_histogram_for_class(frame_before: pd.DataFrame, lab: str, cutoffs: dict, out_path: str):
+    if "dist_to_class_mean" not in frame_before.columns:
+        print("No dist_to_class_mean column found, skipping histogram.")
+        return
+
+    subset = frame_before[frame_before["label"] == lab]
+    if len(subset) == 0:
+        print(f"No rows for class {lab}, skipping histogram.")
+        return
+
+    d = subset["dist_to_class_mean"].to_numpy()
+    cutoff = cutoffs.get(lab, np.nan)
+
+    plt.figure(figsize=(7, 5))
+    plt.hist(d, bins=30)
+    plt.title(f"Distance to class mean for class {lab} (before outlier removal)")
+    plt.xlabel("Distance to class mean")
+    plt.ylabel("Count")
+
+    if np.isfinite(cutoff):
+        plt.axvline(cutoff, linewidth=2, label=f"MAD cutoff = {cutoff:.3f}")
+        plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+
+def save_pca_scatter(X: np.ndarray, y: np.ndarray, out_path: str, title: str, seed: int):
+    # downsample for readability
+    X_ds, y_ds = _maybe_downsample(X, y, PCA_MAX_POINTS, seed)
+
+    pca = PCA(n_components=2, random_state=seed)
+    X2 = pca.fit_transform(X_ds)
+
+    plt.figure(figsize=(7, 5))
+    # map labels to integers for consistent colouring
+    labs_sorted = sorted(pd.Series(y_ds).unique())
+    lab_to_int = {lab: i for i, lab in enumerate(labs_sorted)}
+    c = np.array([lab_to_int[v] for v in y_ds])
+
+    plt.scatter(X2[:, 0], X2[:, 1], c=c, s=10)
+    plt.title(title)
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
+
+if MAKE_VISUALS:
+    # 1) Histogram for one class, with cutoff line
+    save_distance_histogram_for_class(
+        frame_before=df_before_outliers,
+        lab=HIST_CLASS,
+        cutoffs=cutoffs_by_label,
+        out_path=os.path.join(VIS_DIR, f"hist_dist_class_{HIST_CLASS}.png"),
+    )
+
+    # 2) PCA before outlier removal (after mirror alignment, before filtering)
+    save_pca_scatter(
+        X=aligned_vectors_before_outliers,
+        y=labels_before_outliers,
+        out_path=os.path.join(VIS_DIR, "pca_before_outlier_removal.png"),
+        title="PCA of aligned landmark vectors (before outlier removal)",
+        seed=PCA_SEED,
+    )
+
+    # 3) PCA after outlier removal (final cleaned set)
+    save_pca_scatter(
+        X=aligned_vectors_after_outliers,
+        y=labels_after_outliers,
+        out_path=os.path.join(VIS_DIR, "pca_after_outlier_removal.png"),
+        title="PCA of aligned landmark vectors (after outlier removal)",
+        seed=PCA_SEED,
+    )
+
+    # 4) Stacked bar chart: retained vs removed per class (slide-ready)
+    # Use your counts from logs by recomputing here safely
+    before_counts = label_counts(df_before_outliers)
+    after_counts = label_counts(df)
+
+    classes_sorted = list(before_counts.index)
+    retained = np.array([after_counts.get(c, 0) for c in classes_sorted])
+    removed = np.array([before_counts.get(c, 0) for c in classes_sorted]) - retained
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(classes_sorted, retained, label="Retained after preprocessing", color="#1f4fd8")  # dark blue
+    plt.bar(classes_sorted, removed, bottom=retained, label="Removed during preprocessing", color="#9ec9ff")  # light blue
+    plt.title("Effect of preprocessing on class distributions")
+    plt.xlabel("Class label")
+    plt.ylabel("Number of samples")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(VIS_DIR, "stacked_counts_retained_removed.png"), dpi=200)
+    plt.close()
 
 # Save cleaned dataset
 df.to_csv(CLEAN_PATH, index=False)
@@ -240,4 +345,5 @@ with open(SUMMARY_PATH, "w") as f:
 # Console output so you can quickly verify it worked
 print("Saved cleaned data to:", CLEAN_PATH)
 print("Saved summary to:", SUMMARY_PATH)
+print("Saved visuals to:", VIS_DIR)
 print("\n".join(log_lines))
